@@ -2,23 +2,56 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class TerrainGenerator : MonoBehaviour
 {
     public int width = 100;
     public int depth = 100;
     public float scale = 20f;
-    public float heightScale = 10f; // Scales the height of the terrain
+    public float heightScale = 10f;
     public int octaves = 4;
     public float persistence = 0.5f;
     public float lacunarity = 2.0f;
+    public float textureTiling = 10f;
+    public AnimationCurve heightCurve = AnimationCurve.Linear(0, 0, 1, 1);
 
     private Mesh mesh;
     private Vector3[] vertices;
     private int[] triangles;
 
+    private float offsetX; // X-axis offset for noise
+    private float offsetZ; // Z-axis offset for noise
+
     void Start()
     {
+        RandomizeOffsets();
         GenerateTerrain();
+    }
+
+    void Update()
+    {
+        // Generate a new terrain when the spacebar is pressed
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            RandomizeOffsets();
+            RandomizeParameters();
+            GenerateTerrain();
+        }
+    }
+
+    void RandomizeOffsets()
+    {
+        // Assign a completely random seed for offsets
+        offsetX = Random.Range(0f, 10000f);
+        offsetZ = Random.Range(0f, 10000f);
+    }
+
+    void RandomizeParameters()
+    {
+        // Slightly randomize terrain parameters for variation
+        scale = Random.Range(15f, 25f);
+        heightScale = Random.Range(8f, 12f);
+        persistence = Random.Range(0.4f, 0.6f);
     }
 
     void GenerateTerrain()
@@ -44,18 +77,31 @@ public class TerrainGenerator : MonoBehaviour
     float GeneratePerlinNoise(int x, int z)
     {
         float height = 0f;
-        float amplitude = 1f;
         float frequency = 1f;
+        float amplitude = 1f;
 
+        // Combine multiple layers of Perlin noise
         for (int i = 0; i < octaves; i++)
         {
-            float sampleX = (x / scale) * frequency;
-            float sampleZ = (z / scale) * frequency;
-
+            float sampleX = (x + offsetX) / scale * frequency;
+            float sampleZ = (z + offsetZ) / scale * frequency;
             height += Mathf.PerlinNoise(sampleX, sampleZ) * amplitude;
 
-            amplitude *= persistence;
-            frequency *= lacunarity;
+            frequency *= lacunarity;   // Increase frequency
+            amplitude *= persistence; // Decrease amplitude
+        }
+
+        // Apply height curve for shaping
+        height = heightCurve.Evaluate(height);
+
+        // Modify valleys and flattening
+        if (height < 0.3f) // Low areas
+        {
+            height *= 0.5f; // Slightly flatten
+        }
+        else if (height > 0.4f && height < 0.6f) // Valleys
+        {
+            height *= 0.8f; // Reduce height slightly
         }
 
         return height;
@@ -73,7 +119,6 @@ public class TerrainGenerator : MonoBehaviour
         {
             for (int x = 0; x < width; x++)
             {
-                // Apply height scale
                 vertices[vertexIndex] = new Vector3(x, heightMap[x, z] * heightScale, z);
 
                 if (x < width - 1 && z < depth - 1)
@@ -96,25 +141,24 @@ public class TerrainGenerator : MonoBehaviour
 
     void BuildMesh()
     {
-        // Initialize the mesh
         mesh = new Mesh
         {
             vertices = vertices,
             triangles = triangles
         };
 
-        // Assign UVs
         Vector2[] uvs = new Vector2[vertices.Length];
         for (int z = 0; z < depth; z++)
         {
             for (int x = 0; x < width; x++)
             {
-                uvs[z * width + x] = new Vector2((float)x / (width - 1), (float)z / (depth - 1));
+                uvs[z * width + x] = new Vector2((float)x / (width - 1) * textureTiling,
+                                                 (float)z / (depth - 1) * textureTiling);
             }
         }
 
-        mesh.uv = uvs; // Assign UVs
-        mesh.RecalculateNormals(); // Ensure lighting works correctly
-        GetComponent<MeshFilter>().mesh = mesh; // Assign the mesh to the MeshFilter
+        mesh.uv = uvs;
+        mesh.RecalculateNormals();
+        GetComponent<MeshFilter>().mesh = mesh;
     }
 }
